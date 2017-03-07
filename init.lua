@@ -27,12 +27,49 @@ SPRINT_SPEED = 0.8		-- how much faster player can run if satiated
 SPRINT_JUMP = 0.1		-- how much higher player can jump if satiated
 SPRINT_DRAIN = 0.35		-- how fast to drain satation while sprinting (0-1)
 
+-- Initialize HUD
+if minetest.get_modpath("hudbars") then
+	-- Modified from Wuzzy's hbhunger mod
+	hb.register_hudbar(
+		"stamina",
+		0xFFFFFF,
+		"Stamina",
+		{ icon = "stamina_hud_fg.png", bgicon = "stamina_hud_bg.png",  bar = "stamina_bar.png" },
+		0,
+		STAMINA_VISUAL_MAX,
+		false)
+end
+
 local function get_int_attribute(player, key)
 	local level = player:get_attribute(key)
 	if level then
 		return tonumber( level )
 	else
 		return nil
+	end
+end
+
+local function stamina_update_hud(player, level)
+	if minetest.get_modpath("hudbars") then
+		hb.change_hudbar(player, "stamina", math.min(STAMINA_VISUAL_MAX, level))
+	else
+		player:hud_change(player:get_attribute("stamina:hud_id"), "number", math.min(STAMINA_VISUAL_MAX, level))
+	end
+end
+
+local function stamina_set_hud_poisoned(player, is_poisoned)
+	if minetest.get_modpath("hudbars") then
+		if is_poisoned then
+			hb.change_hudbar(player, "stamina", nil, nil, "stamina_hud_poison.png", nil, "stamina_bar_poison.png")
+		else
+			hb.change_hudbar(player, "stamina", nil, nil, "stamina_hud_fg.png", nil, "stamina_bar.png")
+		end
+	else
+		if is_poisoned then
+			player:hud_change(player:get_attribute("stamina:hud_id"), "text", "stamina_hud_poison.png")
+		else
+			player:hud_change(player:get_attribute("stamina:hud_id"), "text", "stamina_hud_fg.png")
+		end
 	end
 end
 
@@ -48,8 +85,8 @@ local function stamina_update_level(player, level)
 	end
 
 	player:set_attribute("stamina:level", level)
-
-	player:hud_change(player:get_attribute("stamina:hud_id"), "number", math.min(STAMINA_VISUAL_MAX, level))
+	
+	stamina_update_hud(player, level)
 end
 
 local function stamina_is_poisoned(player)
@@ -167,7 +204,6 @@ local function stamina_globaltimer(dtime)
 
 			--- START sprint
 			if enable_sprint then
-
 				local name = player:get_player_name()
 
 				-- check if player can sprint (stamina must be over 6 points)
@@ -262,7 +298,7 @@ local function poison_player(ticks, time, elapsed, user)
 		minetest.after(time, poison_player, ticks, time, elapsed + 1, user)
 		stamina_set_poisoned(user,true)
 	else
-		user:hud_change(user:get_attribute("stamina:hud_id"), "text", "stamina_hud_fg.png")
+		stamina_set_hud_poisoned(user, false)
 		stamina_set_poisoned(user,false)
 	end
 	local hp = user:get_hp() -1 or 0
@@ -304,7 +340,7 @@ function stamina.eat(hp_change, replace_with_item, itemstack, user, pointed_thin
 		stamina_update_level(user, level)
 	else
 		-- assume hp_change < 0.
-		user:hud_change(user:get_attribute("stamina:hud_id"), "text", "stamina_hud_poison.png")
+		stamina_set_hud_poisoned(user, true)
 		poison_player(2.0, -hp_change, 0, user)
 	end
 
@@ -341,18 +377,25 @@ if minetest.setting_getbool("enable_damage") and minetest.is_yes(minetest.settin
 		else
 			player:set_attribute("stamina:level", level)
 		end
-		local id = player:hud_add({
-			name = "stamina",
-			hud_elem_type = "statbar",
-			position = {x = 0.5, y = 1},
-			size = {x = 24, y = 24},
-			text = "stamina_hud_fg.png",
-			number = level,
-			alignment = {x = -1, y = -1},
-			offset = {x = -266, y = -110},
-			max = 0,
-		})
-		player:set_attribute("stamina:hud_id", id)
+		
+		-- Init HUD
+		if minetest.get_modpath("hudbars") then
+			-- Modified from Wuzzy's hbhunger mod
+			hb.init_hudbar(player, "stamina", level)
+		else
+			local id = player:hud_add({
+				name = "stamina",
+				hud_elem_type = "statbar",
+				position = {x = 0.5, y = 1},
+				size = {x = 24, y = 24},
+				text = "stamina_hud_fg.png",
+				number = level,
+				alignment = {x = -1, y = -1},
+				offset = {x = -266, y = -110},
+				max = 0,
+			})
+			player:set_attribute("stamina:hud_id", id)
+		end
 	end)
 
 	minetest.register_globalstep(stamina_globaltimer)
